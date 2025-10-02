@@ -1,5 +1,6 @@
 import time
 import random
+import traceback
 from datetime import datetime
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
@@ -25,7 +26,7 @@ class Job(db.Model):
     summary = db.Column(db.Text)
     salary = db.Column(db.String(128))
     job_url = db.Column(db.String(512))
-
+    
     def to_dict(self):
         return {
             "id": self.id,
@@ -39,11 +40,11 @@ class Job(db.Model):
             "JobUrl": self.job_url
         }
 
+with app.app_context():
+    db.create_all()
+
 def get_url(position, location):
-    template = 'https://in.indeed.com/jobs?q={}&l={}'
-    position = position.replace(' ', '+')
-    location = location.replace(' ', '+')
-    return template.format(position, location)
+    return f'https://in.indeed.com/jobs?q={position.replace(" ", "+")}&l={location.replace(" ", "+")}'
 
 def get_record(card):
     title_tag = card.find('h2', {'class': 'jobTitle'})
@@ -61,15 +62,13 @@ def get_record(card):
     today = datetime.today().strftime('%Y-%m-%d')
     
     summary_tag = card.find('div', {'class': 'job-snippet'})
-    if not summary_tag:
-        summary_tag = card.find('div', {'data-testid': 'job-snippet'})
-    summary = summary_tag.text.strip().replace("", " ") if summary_tag else 'NOT MENTIONED'
+    if not summary_tag: summary_tag = card.find('div', {'data-testid': 'job-snippet'})
+    summary = summary_tag.text.strip().replace("\n"," ") if summary_tag else 'NOT MENTIONED'
     
     job_url = "https://in.indeed.com" + card.get('href') if card.get('href') else 'NOT MENTIONED'
     
     salary_tag = card.find('div', {'data-testid': 'attribute_snippet_testid-salary'})
-    if not salary_tag:
-        salary_tag = card.find('div', {'class': 'salary-snippet'})
+    if not salary_tag: salary_tag = card.find('div', {'class': 'salary-snippet'})
     salary = salary_tag.text.strip() if salary_tag else 'NOT MENTIONED'
     
     return {
@@ -84,11 +83,9 @@ def get_record(card):
     }
 
 def scrape_jobs(position, location):
-    records = []
-    url = get_url(position, location)
-    
-    # Selenium setup
+
     options = Options()
+    
     options.add_argument("--headless")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--no-sandbox")
@@ -102,67 +99,44 @@ def scrape_jobs(position, location):
             platform="Win32",
             webgl_vendor="Intel Inc.",
             renderer="Intel Iris OpenGL Engine",
-            fix_hairline=True,
-    )
-    
+            fix_hairline=True)
+    url = get_url(position, location)
     driver.get(url)
     time.sleep(5)
     
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
     time.sleep(2)
-    
-    page_num = 1
+    jobs, page_num = [], 1
     while True:
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         cards = soup.select("a.tapItem, div.job_seen_beacon")
         
         for card in cards:
-            try:
-                job = get_record(card)
-                records.append(job)
-            except Exception as e:
-                pass
+            try: jobs.append(get_record(card))
+            except: continue
         next_btn = soup.find('a', {'data-testid': 'pagination-page-next'})
         if next_btn and next_btn.get('href'):
-            next_url = 'https://in.indeed.com' + next_btn['href']
-            driver.get(next_url)
+            driver.get('https://in.indeed.com' + next_btn['href'])
             page_num += 1
             time.sleep(random.uniform(3, 6))
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
-        else:
-            break
-        
+        else: break
     driver.quit()
-    return records, page_num
-
-# Create database tables
-with app.app_context():
-    db.create_all()
+    return jobs, page_num
 
 @app.route('/api/scrape-jobs', methods=['POST'])
-def api_scrape_jobs():
+def api_scrape():
     try:
-        data = request.get_json()
-        
-        if not data or 'position' not in data or 'location' not in data:
-            return jsonify({'error': 'Missing required parameters'}), 400
-        position = data['position']
-        location = data['location']
-        
-        if not position.strip() or not location.strip():
-            return jsonify({'error': 'Position and location cannot be empty'}), 400
+        data = request.get_json(force=True)
+        position = data.get('position', '').strip()
+        location = data.get('location', '').strip()
+        if not position or not location:
+            return jsonify({'success': False, 'error': 'Both \"position\" and \"location\" are required.'}), 400
         jobs, pages_scraped = scrape_jobs(position, location)
         
         saved_jobs = []
         for job in jobs:
-            
-            existing_job = Job.query.filter_by(
-                job_title=job['JobTitle'],
-                company=job['Company'],
-                job_url=job['JobUrl']
-            ).first()
-            
-            if not existing_job:
+            if not Job.query.filter_by(job_title=job['JobTitle'], company=job['Company'], job_url=job['JobUrl']).first():
                 job_entry = Job(
                     job_title=job['JobTitle'],
                     company=job['Company'],
@@ -177,51 +151,24 @@ def api_scrape_jobs():
                 saved_jobs.append(job)
                 
         db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'data': {
-                'jobs': jobs,
-                'total_jobs_scraped': len(jobs),
-                'new_jobs_saved': len(saved_jobs),
-                'pages_scraped': pages_scraped,
-                'position_searched': position,
-                'location_searched': location,
-                'scraped_at': datetime.now().isoformat()
-            }
-        })
-        
+        return jsonify({'success': True, 'jobs': jobs, 'new_jobs_saved': len(saved_jobs)})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
 
 @app.route('/api/jobs', methods=['GET'])
-def get_jobs():
+def api_jobs():
     try:
         position = request.args.get('position', '').strip()
         location = request.args.get('location', '').strip()
         
         query = Job.query
-        
-        if position:
-            query = query.filter(Job.job_title.ilike(f'%{position}%'))
-        if location:
-            query = query.filter(Job.location.ilike(f'%{location}%'))
-            
-        jobs = query.all()
-        
-        return jsonify({
-            'success': True,
-            'total_jobs': len(jobs),
-            'filters': {
-                'position': position if position else None,
-                'location': location if location else None
-            },
-            'jobs': [job.to_dict() for job in jobs]
-        })
-        
+        if position: query = query.filter(Job.job_title.ilike(f'%{position}%'))
+        if location: query = query.filter(Job.location.ilike(f'%{location}%'))
+        results = [job.to_dict() for job in query.all()]
+        return jsonify({'success': True, 'jobs': results})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
 
 if __name__ == '__main__':
     
