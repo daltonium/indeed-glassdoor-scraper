@@ -1,0 +1,8 @@
+Flask
+Flask-SQLAlchemy
+selenium
+selenium-stealth
+beautifulsoup4
+requests
+lxml
+chromedriver-autoinstaller
