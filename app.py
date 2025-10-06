@@ -48,20 +48,30 @@ def get_url(position, location):
 def get_record(card):
     title_tag = card.find('h2', {'class': 'jobTitle'})
     job_title = title_tag.text.strip() if title_tag else 'NOT MENTIONED'
+    
     company_tag = card.find('span', {'data-testid': 'company-name'})
     company = company_tag.text.strip() if company_tag else 'NOT MENTIONED'
+    
     location_tag = card.find('div', {'data-testid': 'text-location'})
     job_location = location_tag.text.strip() if location_tag else 'NOT MENTIONED'
+    
     post_date_tag = card.find('span', {'data-testid': 'myJobsStateDate'})
     post_date = post_date_tag.text.strip() if post_date_tag else 'NOT MENTIONED'
+    
     today = datetime.today().strftime('%Y-%m-%d')
+    
     summary_tag = card.find('div', {'class': 'job-snippet'})
+    
     if not summary_tag: summary_tag = card.find('div', {'data-testid': 'job-snippet'})
     summary = summary_tag.text.strip().replace("\n"," ") if summary_tag else 'NOT MENTIONED'
+    
     job_url = "https://in.indeed.com" + card.get('href') if card.get('href') else 'NOT MENTIONED'
+    
     salary_tag = card.find('div', {'data-testid': 'attribute_snippet_testid-salary'})
+    
     if not salary_tag: salary_tag = card.find('div', {'class': 'salary-snippet'})
     salary = salary_tag.text.strip() if salary_tag else 'NOT MENTIONED'
+    
     return {
         "JobTitle": job_title,
         "Company": company,
@@ -74,12 +84,15 @@ def get_record(card):
     }
 
 def scrape_jobs(position, location):
+    
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-gpu")
+    
     driver = webdriver.Chrome(options=options)
+    
     stealth(driver,
             languages=["en-US", "en"],
             vendor="Google Inc.",
@@ -87,25 +100,33 @@ def scrape_jobs(position, location):
             webgl_vendor="Intel Inc.",
             renderer="Intel Iris OpenGL Engine",
             fix_hairline=True)
+    
     url = get_url(position, location)
     driver.get(url)
+    
     time.sleep(5)
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
     time.sleep(2)
+    
     jobs, page_num = [], 1
     while True:
+        
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         cards = soup.select("a.tapItem, div.job_seen_beacon")
+        
         for card in cards:
             try: jobs.append(get_record(card))
             except: continue
         next_btn = soup.find('a', {'data-testid': 'pagination-page-next'})
+        
         if next_btn and next_btn.get('href'):
             driver.get('https://in.indeed.com' + next_btn['href'])
             page_num += 1
             time.sleep(random.uniform(3, 6))
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
+            
         else: break
+        
     driver.quit()
     return jobs, page_num
 
