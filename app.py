@@ -184,49 +184,5 @@ def scrape_route():
             db.session.rollback()
             return jsonify({'success': False, 'error': str(e)}), 500
 
-# # API Routes
-# @app.route('/api/scrape-jobs', methods=['POST'])
-# def api_scrape():
-#     try:
-#         data = request.get_json(force=True)
-#         position = data.get('position', '').strip()
-#         location = data.get('location', '').strip()
-#         if not position or not location:
-#             return jsonify({'success': False, 'error': 'Both "position" and "location" are required.'}), 400
-#         jobs, pages_scraped = scrape_jobs(position, location)
-#         saved_jobs = []
-#         for job in jobs:
-#             if not Job.query.filter_by(job_title=job['JobTitle'], company=job['Company'], job_url=job['JobUrl']).first():
-#                 job_entry = Job(
-#                     job_title=job['JobTitle'],
-#                     company=job['Company'],
-#                     location=job['Location'],
-#                     post_date=job['PostDate'],
-#                     extract_date=job['ExtractDate'],
-#                     summary=job['Summary'],
-#                     salary=job['Salary'],
-#                     job_url=job['JobUrl']
-#                 )
-#                 db.session.add(job_entry)
-#                 saved_jobs.append(job)
-#         db.session.commit()
-#         return jsonify({'success': True, 'jobs': jobs, 'new_jobs_saved': len(saved_jobs)})
-#     except Exception as e:
-#         db.session.rollback()
-#         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
-
-# @app.route('/api/jobs', methods=['GET'])
-# def api_jobs():
-#     try:
-#         position = request.args.get('position', '').strip()
-#         location = request.args.get('location', '').strip()
-#         query = Job.query
-#         if position: query = query.filter(Job.job_title.ilike(f'%{position}%'))
-#         if location: query = query.filter(Job.location.ilike(f'%{location}%'))
-#         results = [job.to_dict() for job in query.all()]
-#         return jsonify({'success': True, 'jobs': results})
-#     except Exception as e:
-#         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
-
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
