@@ -21,7 +21,9 @@ db = SQLAlchemy(app)
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Job(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -49,11 +51,6 @@ class Job(db.Model):
 
 with app.app_context():
     db.create_all()
-    # Create default user if not exists
-    if not User.query.filter_by(username='admin').first():
-        default_user = User(username='admin', password='admin123')
-        db.session.add(default_user)
-        db.session.commit()
 
 # Login required decorator
 def login_required(f):
@@ -71,30 +68,22 @@ def get_url(position, location):
 def get_record(card):
     title_tag = card.find('h2', {'class': 'jobTitle'})
     job_title = title_tag.text.strip() if title_tag else 'NOT MENTIONED'
-
     company_tag = card.find('span', {'data-testid': 'company-name'})
     company = company_tag.text.strip() if company_tag else 'NOT MENTIONED'
-
     location_tag = card.find('div', {'data-testid': 'text-location'})
     job_location = location_tag.text.strip() if location_tag else 'NOT MENTIONED'
-
     post_date_tag = card.find('span', {'data-testid': 'myJobsStateDate'})
     post_date = post_date_tag.text.strip() if post_date_tag else 'NOT MENTIONED'
-
     today = datetime.today().strftime('%Y-%m-%d')
-
     summary_tag = card.find('div', {'class': 'job-snippet'})
     if not summary_tag: 
         summary_tag = card.find('div', {'data-testid': 'job-snippet'})
     summary = summary_tag.text.strip().replace("\n"," ") if summary_tag else 'NOT MENTIONED'
-
     job_url = "https://in.indeed.com" + card.get('href') if card.get('href') else 'NOT MENTIONED'
-
     salary_tag = card.find('div', {'data-testid': 'attribute_snippet_testid-salary'})
     if not salary_tag: 
         salary_tag = card.find('div', {'class': 'salary-snippet'})
     salary = salary_tag.text.strip() if salary_tag else 'NOT MENTIONED'
-
     return {
         "JobTitle": job_title,
         "Company": company,
@@ -112,9 +101,7 @@ def scrape_jobs(position, location):
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-gpu")
-
     driver = webdriver.Chrome(options=options)
-
     stealth(driver,
             languages=["en-US", "en"],
             vendor="Google Inc.",
@@ -122,27 +109,21 @@ def scrape_jobs(position, location):
             webgl_vendor="Intel Inc.",
             renderer="Intel Iris OpenGL Engine",
             fix_hairline=True)
-
     url = get_url(position, location)
     driver.get(url)
-
     time.sleep(5)
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
     time.sleep(2)
-
     jobs, page_num = [], 1
     while True:
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         cards = soup.select("a.tapItem, div.job_seen_beacon")
-
         for card in cards:
             try: 
                 jobs.append(get_record(card))
             except: 
                 continue
-
         next_btn = soup.find('a', {'data-testid': 'pagination-page-next'})
-
         if next_btn and next_btn.get('href'):
             driver.get('https://in.indeed.com' + next_btn['href'])
             page_num += 1
@@ -150,11 +131,50 @@ def scrape_jobs(position, location):
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
         else: 
             break
-
     driver.quit()
     return jobs, page_num
 
 # Authentication Routes
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        email = request.form.get('email')
+        password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password')
+
+        # Validation
+        if not username or not email or not password:
+            flash('All fields are required', 'error')
+            return redirect(url_for('signup'))
+
+        if password != confirm_password:
+            flash('Passwords do not match', 'error')
+            return redirect(url_for('signup'))
+
+        if len(password) < 6:
+            flash('Password must be at least 6 characters', 'error')
+            return redirect(url_for('signup'))
+
+        # Check if user exists
+        if User.query.filter_by(username=username).first():
+            flash('Username already exists', 'error')
+            return redirect(url_for('signup'))
+
+        if User.query.filter_by(email=email).first():
+            flash('Email already registered', 'error')
+            return redirect(url_for('signup'))
+
+        # Create new user
+        new_user = User(username=username, email=email, password=password)
+        db.session.add(new_user)
+        db.session.commit()
+
+        flash('Account created successfully! Please login.', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('signup.html')
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -166,6 +186,7 @@ def login():
         if user:
             session['logged_in'] = True
             session['username'] = username
+            session['user_id'] = user.id
             flash('Login successful!', 'success')
             return redirect(url_for('index'))
         else:
@@ -202,7 +223,7 @@ def jobs_page():
 @login_required
 def scrape_route():
     if request.method == 'GET':
-        return render_template('index.html')
+        return render_template('scrape.html')
     else:
         try:
             if request.is_json:
@@ -233,12 +254,61 @@ def scrape_route():
                     db.session.add(job_entry)
                     saved_jobs.append(job)
             db.session.commit()
-            flash(f'Successfully scraped {len(jobs)} jobs! {len(saved_jobs)} new jobs added.', 'success')
-            return redirect(url_for('jobs_page', position=position, location=location))
+            return jsonify({'success': True, 'jobs': jobs, 'new_jobs_saved': len(saved_jobs)})
         except Exception as e:
             db.session.rollback()
-            flash(f'Error: {str(e)}', 'error')
-            return redirect(url_for('index'))
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+# API Routes
+@app.route('/api/scrape-jobs', methods=['POST'])
+@login_required
+def api_scrape():
+    try:
+        data = request.get_json(force=True)
+        position = data.get('position', '').strip()
+        location = data.get('location', '').strip()
+        if not position or not location:
+            return jsonify({'success': False, 'error': 'Both "position" and "location" are required.'}), 400
+        jobs, pages_scraped = scrape_jobs(position, location)
+        saved_jobs = []
+        for job in jobs:
+            if not Job.query.filter_by(job_title=job['JobTitle'], company=job['Company'], job_url=job['JobUrl']).first():
+                job_entry = Job(
+                    job_title=job['JobTitle'],
+                    company=job['Company'],
+                    location=job['Location'],
+                    post_date=job['PostDate'],
+                    extract_date=job['ExtractDate'],
+                    summary=job['Summary'],
+                    salary=job['Salary'],
+                    job_url=job['JobUrl']
+                )
+                db.session.add(job_entry)
+                saved_jobs.append(job)
+        db.session.commit()
+        return jsonify({'success': True, 'jobs': jobs, 'new_jobs_saved': len(saved_jobs)})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
+
+@app.route('/api/jobs', methods=['GET'])
+@login_required
+def api_jobs():
+    try:
+        position = request.args.get('position', '').strip()
+        location = request.args.get('location', '').strip()
+        query = Job.query
+        if position: 
+            query = query.filter(Job.job_title.ilike(f'%{position}%'))
+        if location: 
+            query = query.filter(Job.location.ilike(f'%{location}%'))
+        results = [job.to_dict() for job in query.all()]
+        return jsonify({'success': True, 'jobs': results})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
 
 if __name__ == '__main__':
+    print("🚀 Job Scraper with Sign Up & Login")
+    print("📍 Visit: http://127.0.0.1:5000/signup to create an account")
+    print("🔐 Or visit: http://127.0.0.1:5000/login to sign in")
     app.run(debug=True, host='0.0.0.0', port=5000)
