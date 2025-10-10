@@ -1,0 +1,390 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Scraper - Search Jobs</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.15);
+            overflow: hidden;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        .header {
+            background: linear-gradient(45deg, #4158D0 0%, #C850C0 46%, #FFCC70 100%);
+            color: white;
+            padding: 40px 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .form-container {
+            padding: 40px 30px;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+            font-size: 1em;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            background: #f8f9fa;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 15px;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .submit-btn:active {
+            transform: translateY(0);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 10px;
+        }
+
+        .nav-link {
+            flex: 1;
+            padding: 12px;
+            background: #f8f9fa;
+            color: #495057;
+            text-decoration: none;
+            text-align: center;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .nav-link:hover {
+            background: #e9ecef;
+            transform: translateY(-1px);
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            background: #e3f2fd;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #2196f3;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .progress-bar {
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+            display: none;
+        }
+
+        .progress-fill {
+            height: 8px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                margin: 10px;
+            }
+
+            .header {
+                padding: 30px 20px;
+            }
+
+            .header h1 {
+                font-size: 2em;
+            }
+
+            .form-container {
+                padding: 30px 20px;
+            }
+
+            .nav-links {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Job Scraper</h1>
+            <p>Find your next opportunity</p>
+        </div>
+
+        <div class="form-container">
+            <form id="scrapeForm" method="POST">
+                <div class="form-group">
+                    <label for="position">
+                        💼 Job Position
+                    </label>
+                    <input 
+                        type="text" 
+                        id="position" 
+                        name="position" 
+                        placeholder="e.g., Python Developer, Data Scientist, Software Engineer" 
+                        required
+                        autocomplete="off"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="location">
+                        📍 Location
+                    </label>
+                    <input 
+                        type="text" 
+                        id="location" 
+                        name="location" 
+                        placeholder="e.g., Mumbai, Bangalore, Delhi, Remote" 
+                        required
+                        autocomplete="off"
+                    >
+                </div>
+
+                <button type="submit" class="submit-btn" id="submitBtn">
+                    🚀 Start Scraping Jobs
+                </button>
+
+                <div class="nav-links">
+                    <a href="/" class="nav-link">🏠 Home</a>
+                    <a href="/jobs" class="nav-link">📋 View Jobs</a>
+                </div>
+            </form>
+
+            <div class="loading" id="loading">
+                <div class="loading-spinner"></div>
+                <p><strong>Scraping jobs...</strong></p>
+                <p>This may take a few minutes. Please wait.</p>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+
+            <div class="status" id="status"></div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('scrapeForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const position = document.getElementById('position').value.trim();
+            const location = document.getElementById('location').value.trim();
+
+            if (!position || !location) {
+                showStatus('Please fill in both position and location fields.', 'error');
+                return;
+            }
+
+            const loading = document.getElementById('loading');
+            const status = document.getElementById('status');
+            const submitBtn = document.getElementById('submitBtn');
+            const form = document.getElementById('scrapeForm');
+
+            // Show loading state
+            loading.style.display = 'block';
+            status.style.display = 'none';
+            submitBtn.disabled = true;
+            submitBtn.textContent = '⏳ Scraping in progress...';
+            form.style.opacity = '0.6';
+
+            // Simulate progress (since actual scraping progress is hard to track)
+            simulateProgress();
+
+            try {
+                const response = await fetch('/api/scrape-jobs', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ position, location })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showStatus(`
+                        <strong>✅ Scraping Completed Successfully!</strong><br>
+                        📊 Total jobs found: <strong>${result.jobs.length}</strong><br>
+                        💾 New jobs saved: <strong>${result.new_jobs_saved}</strong><br>
+                        <br>
+                        <a href="/jobs?position=${encodeURIComponent(position)}&location=${encodeURIComponent(location)}" 
+                           style="color: #155724; text-decoration: none; font-weight: bold;">
+                            📋 View Results →
+                        </a>
+                    `, 'success');
+                } else {
+                    showStatus(`
+                        <strong>❌ Scraping Failed</strong><br>
+                        Error: ${result.error}
+                    `, 'error');
+                }
+            } catch (error) {
+                showStatus(`
+                    <strong>❌ Network Error</strong><br>
+                    Failed to connect to the server. Please check your connection and try again.
+                `, 'error');
+            }
+
+            // Reset form state
+            loading.style.display = 'none';
+            submitBtn.disabled = false;
+            submitBtn.textContent = '🚀 Start Scraping Jobs';
+            form.style.opacity = '1';
+        });
+
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.innerHTML = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
+
+            // Auto-hide success messages after 10 seconds
+            if (type === 'success') {
+                setTimeout(() => {
+                    status.style.display = 'none';
+                }, 10000);
+            }
+        }
+
+        function simulateProgress() {
+            const progressFill = document.getElementById('progressFill');
+            const progressBar = document.querySelector('.progress-bar');
+
+            progressBar.style.display = 'block';
+
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress > 95) progress = 95;
+
+                progressFill.style.width = progress + '%';
+
+                if (progress >= 95) {
+                    clearInterval(interval);
+                    setTimeout(() => {
+                        progressBar.style.display = 'none';
+                        progressFill.style.width = '0%';
+                    }, 1000);
+                }
+            }, 800);
+        }
+
+        // Add some interactive feedback
+        document.querySelectorAll('input').forEach(input => {
+            input.addEventListener('focus', function() {
+                this.parentElement.style.transform = 'scale(1.02)';
+            });
+
+            input.addEventListener('blur', function() {
+                this.parentElement.style.transform = 'scale(1)';
+            });
+        });
+    </script>
+</body>
+</html>
